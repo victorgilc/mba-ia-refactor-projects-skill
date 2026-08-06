@@ -1,16 +1,30 @@
 import sqlite3
-import os
-
-db_connection = None
-db_path = "loja.db"
+from flask import g
+from werkzeug.security import generate_password_hash
+from src.config.settings import DATABASE_PATH
 
 def get_db():
-    global db_connection
-    if db_connection is None:
-        db_connection = sqlite3.connect(db_path, check_same_thread=False)
-        db_connection.row_factory = sqlite3.Row
-        cursor = db_connection.cursor()
+    if 'db' not in g:
+        g.db = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+        g.db.row_factory = sqlite3.Row
+    return g.db
 
+def close_db(e=None):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
+
+def init_db(app):
+    try:
+        app.teardown_appcontext(close_db)
+    except AssertionError:
+        pass # Se já iniciou o primeiro request (comum em testes), não re-registra
+    
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+
+        # Criar tabelas
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS produtos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,8 +65,9 @@ def get_db():
                 preco_unitario REAL
             )
         """)
-        db_connection.commit()
+        db.commit()
 
+        # Seed Produtos
         cursor.execute("SELECT COUNT(*) FROM produtos")
         if cursor.fetchone()[0] == 0:
             produtos = [
@@ -71,16 +86,44 @@ def get_db():
                 "INSERT INTO produtos (nome, descricao, preco, estoque, categoria) VALUES (?, ?, ?, ?, ?)",
                 produtos
             )
+            db.commit()
 
+        # Seed Usuários com hash de senha
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        if cursor.fetchone()[0] == 0:
             usuarios = [
-                ("Admin", "admin@loja.com", "admin123", "admin"),
-                ("João Silva", "joao@email.com", "123456", "cliente"),
-                ("Maria Santos", "maria@email.com", "senha123", "cliente"),
+                ("Admin", "admin@loja.com", generate_password_hash("admin123"), "admin"),
+                ("João Silva", "joao@email.com", generate_password_hash("123456"), "cliente"),
+                ("Maria Santos", "maria@email.com", generate_password_hash("senha123"), "cliente"),
             ]
             cursor.executemany(
                 "INSERT INTO usuarios (nome, email, senha, tipo) VALUES (?, ?, ?, ?)",
                 usuarios
             )
-            db_connection.commit()
+            db.commit()
+        else:
+            # Migração de senhas em texto puro já existentes para hashes seguros
+            cursor.execute("SELECT id, senha FROM usuarios")
+            usuarios_existentes = cursor.fetchall()
+            for usuario in usuarios_existentes:
+                senha_atual = usuario["senha"]
+                if not (senha_atual.startswith("scrypt:") or senha_atual.startswith("pbkdf2:") or senha_atual.startswith("sha256:")):
+                    # É texto puro! Vamos aplicar hash
+                    senha_hash = generate_password_hash(senha_atual)
+                    cursor.execute("UPDATE usuarios SET senha = ? WHERE id = ?", (senha_hash, usuario["id"]))
+            db.commit()
 
-    return db_connection
+def reset_db():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM itens_pedido")
+    cursor.execute("DELETE FROM pedidos")
+    cursor.execute("DELETE FROM produtos")
+    cursor.execute("DELETE FROM usuarios")
+    try:
+        cursor.execute("DELETE FROM sqlite_sequence")
+    except sqlite3.OperationalError:
+        pass # Se a tabela sqlite_sequence ainda não existir, ignora
+    db.commit()
+
+
