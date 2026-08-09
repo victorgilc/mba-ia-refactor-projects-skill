@@ -75,11 +75,13 @@ Passos:
    - Incluir detecção de **APIs deprecated** quando aplicável.
    - Apontar credenciais hardcoded e SQL Injection (CRITICAL).
 5. Conte o total de findings.
+6. **SALVAR o relatório em arquivo (obrigatório — não pule):** grave o relatório completo (exatamente o conteúdo montado no passo 3, com o formato do `references/report-template.md`) em `../reports/audit-project-N.md`, onde `N` é o número do projeto no repositório (projeto 1 = `code-smells-project`, projeto 2 = `ecommerce-api-legacy`, projeto 3 = `task-manager-api` — ex.: `code-smells-project` → `../reports/audit-project-1.md`, `ecommerce-api-legacy` → `../reports/audit-project-2.md`, `task-manager-api` → `../reports/audit-project-3.md`). Se a pasta `reports/` não existir na raiz do repositório, crie-a. **Este arquivo é um entregável obrigatório da auditoria e deve existir independentemente da confirmação da Fase 3.**
 
 **IMPORTANTE — Confirmação obrigatória:** ao final da Fase 2, **PARE e pergunte ao usuário** antes de qualquer modificação:
 
 ```
 Total: <N> findings
+Relatório salvo em ../reports/audit-project-N.md
 Fase 2 concluída. Prosseguir com a refatoração (Fase 3)? [y/n]
 ```
 
@@ -103,6 +105,9 @@ Passos:
    - **Preservar validações e códigos de status:** campos obrigatórios, regras (negativos, limites, categorias) e os status retornados (400/401/404/201/200) devem continuar idênticos ao original. Validação de entrada não pode ser descartada na refatoração.
    - **Preservar middlewares globais** que o original usava (ex: `CORS(app)`), para não quebrar consumidores cross-origin.
    - **Aplicar os princípios SOLID, KISS e DRY** ao código refatorado (detalhes em `references/mvc-guidelines.md`): cada classe/módulo com uma única responsabilidade (S, OCP), sem depender de concretos internos (DIP), sem reimplementar criptografia/comportamento já existente (DRY), e sem over-engineering — a solução mais simples que preserva o contrato original (KISS). Refatorar para não adicionar complexidade desnecessária.
+   - **NÃO alterar a semântica dos efeitos colaterais de endpoints mutadores (create/update/delete).** O *comportamento observável* (quais linhas são escritas/apagadas/atualizadas — ex.: um DELETE deixa órfãos ou remove em **cascata**) faz parte do contrato tanto quanto a rota e o status. Mantenha o efeito colateral original; se a melhoria for obrigatória (ex.: introduzir limpeza em cascata), **atualize a mensagem de resposta** para descrever o novo comportamento. Comportamento e mensagem NUNCA podem se contradizer — se o código faz X e a mensagem diz que faz Y, é regressão disfarçada de melhoria.
+   - **Preservar o modelo de persistência/estado (banco em memória vs. arquivo/banco real).** Não troque a fonte de dados como efeito colateral da refatoração (ex.: `:memory:` para arquivo em disco). Isso muda o ciclo de vida dos dados (reset a cada execução vs. estado que persiste entre restarts) e altera respostas (ex.: relatórios) sem aviso. Se a troca for inevitável: torne o **seed idempotente (semear só se vazio)**, nunca assuma banco vazio no boot e valide a paridade CONTRA dados pré-existentes (não apague/apague o banco antigo na validação).
+   - **Endpoints mutadores NÃO se valem apenas pela resposta HTTP 2xx.** Para delete/update/insert, verifique escritas no store (contagem/apogem das linhas efetivamente alteradas, limpeza de filhos/registros relacionados). "O endpoint respondeu 200" não prova que o comportamento foi preservado.
 4. Regerar o roteamento e validar a paridade:
    - Registre no entry point/blueprint **todas** as rotas do contrato da Fase 1, exatamente com os mesmos métodos.
    - Teste HTTP real em **cada endpoint do contrato** (não só em alguns), conferindo o status esperado (inclusive 400/401/404).
@@ -137,13 +142,16 @@ Não declare a Fase 3 como completa sem validar **paridade TOTAL** com o contrat
   - [ ] Login funciona com os dados do banco legado existente (hash compatível com o armazenado).
   - [ ] Middlewares globais originais (ex: CORS) mantidos.
   - [ ] Respostas de erro não expõem stack trace nem segredos.
+  - [ ] Efeitos colaterais de create/update/delete verificados NO STORE (linhas escritas/removidas — ex.: órfãos vs. cascade), não só pelo status HTTP.
+  - [ ] Modelo de persistência preservado (memória vs. arquivo) ou, se trocado, seed idempotente e validação feita sobre dados pré-existentes.
+  - [ ] Mensagens/tex de resposta originais preservados — ou coerentes com o comportamento novo (sem contradição entre código e texto retornado).
   - [ ] SOLID respeitado (responsabilidade única por camada; sem god class; DIP/DI em vez de estado global).
   - [ ] DRY respeitado (validações/queries/respostas compartilhadas, não copiadas).
   - [ ] KISS respeitado (sem over-engineering; solução mais simples que mantém o contrato).
 - Corrigir qualquer violação de paridade e repetir até a app iniciar sem erros e TODOS os endpoints responderem com o comportamento original.
 
 ## Contrato
-- Trabalhe apenas dentro do diretório do projeto em execução.
+- Trabalhe apenas dentro do diretório do projeto em execução, com uma única exceção: **o relatório de auditoria da Fase 2 DEVE ser salvo em `../reports/audit-project-N.md`** (na pasta `reports/` da raiz do repositório).
 - Preserve o comportamento e os endpoints originais.
 - Não altere `SKILL.md` nem os arquivos de referência da skill.
 - Comunique cada decisão arquitetural de forma sucinta ao final.

@@ -75,11 +75,13 @@ Passos:
    - Incluir detecção de **APIs deprecated** quando aplicável.
    - Apontar credenciais hardcoded e SQL Injection (CRITICAL).
 5. Conte o total de findings.
+6. **SALVAR o relatório em arquivo (obrigatório — não pule):** grave o relatório completo (exatamente o conteúdo montado no passo 3, com o formato do `references/report-template.md`) em `../reports/audit-project-N.md`, onde `N` é o número do projeto no repositório (projeto 1 = `code-smells-project`, projeto 2 = `ecommerce-api-legacy`, projeto 3 = `task-manager-api` — ex.: `code-smells-project` → `../reports/audit-project-1.md`, `ecommerce-api-legacy` → `../reports/audit-project-2.md`, `task-manager-api` → `../reports/audit-project-3.md`). Se a pasta `reports/` não existir na raiz do repositório, crie-a. **Este arquivo é um entregável obrigatório da auditoria e deve existir independentemente da confirmação da Fase 3.**
 
 **IMPORTANTE — Confirmação obrigatória:** ao final da Fase 2, **PARE e pergunte ao usuário** antes de qualquer modificação:
 
 ```
 Total: <N> findings
+Relatório salvo em ../reports/audit-project-N.md
 Fase 2 concluída. Prosseguir com a refatoração (Fase 3)? [y/n]
 ```
 
@@ -149,7 +151,7 @@ Não declare a Fase 3 como completa sem validar **paridade TOTAL** com o contrat
 - Corrigir qualquer violação de paridade e repetir até a app iniciar sem erros e TODOS os endpoints responderem com o comportamento original.
 
 ## Contrato
-- Trabalhe apenas dentro do diretório do projeto em execução.
+- Trabalhe apenas dentro do diretório do projeto em execução, com uma única exceção: **o relatório de auditoria da Fase 2 DEVE ser salvo em `../reports/audit-project-N.md`** (na pasta `reports/` da raiz do repositório).
 - Preserve o comportamento e os endpoints originais.
 - Não altere `SKILL.md` nem os arquivos de referência da skill.
 - Comunique cada decisão arquitetural de forma sucinta ao final.

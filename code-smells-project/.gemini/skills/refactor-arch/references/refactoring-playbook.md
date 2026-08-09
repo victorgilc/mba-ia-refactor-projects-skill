@@ -369,6 +369,66 @@ Rotas como `/admin/reset-db`, `/admin/query`, `/delete-X` removem/escrevem globa
 - **Sinal de problema (do projeto 1):** `/admin/reset-db` (apaga o banco) e `/admin/query` **sem qualquer autenticação** no original e ainda expostas no refactor. Adequado: bloquear `/admin/query` (403) — e, para o reset, aplicar o mesmo princípio ou exigir token. Documente a decisão no relatório.
 - Em qualquer stack: rota que executa ação irreversível sem guard, ainda pública = finding (AP-14/AP-09).
 
+## Padrão 19 — Preservar efeitos colaterais e mensagens de endpoints mutadores (AP-21)
+Refatorar NÃO pode mudar o que um endpoint muta no armazenamento de dados e ainda exibir uma mensagem que contradiz o novo comportamento.
+
+**Sinais (qualquer stack):**
+- Um `DELETE` que declara "deletado, mas os registros relacionados ficaram no banco" enquanto o código novo passou a remover em cascata (filhos/pagamentos). Comportamento e texto divergentes.
+- Um `DELETE` que originalmente apontava apenas à linha raiz passou a varrer "children" sem que esse novo efeito fosse comunicado.
+
+**Antes (Node/Express):**
+```js
+app.delete('/api/users/:id', (req, res) => {
+  db.run('DELETE FROM users WHERE id = ?', [id]); // deixa órfãos no banco
+  res.send('Usuário deletado, mas as matrículas e pagamentos ficaram sujos no banco.');
+});
+```
+**Depois OPCIONAL A (preservar comportamento):** manter a semântica original (só o user) e a mensagem idêntica.
+```js
+deleteWithOnlyUser(db, id); // apenas DELETE FROM users
+res.send('Usuário deletado, mas as matrículas e pagamentos ficaram sujos no banco.');
+```
+**Depois OPCIONAL B (melhorar comportamento, com mensagem coerente):** se a limpeza em cascata for intencional, o texto da resposta passa a descrever a nova ação.
+```js
+await deleteWithChildren(id); // payments → enrollments → user em cascata
+res.send('Usuário, matrículas e pagamentos removidos em cascata.');
+```
+> **Regra de ouro:** código e mensagem de resposta devem estar em consenso. Qualquer melhoria de efeito colateral precisa ser acompanhada da mensagem correspondente — caso contrário é regressão silenciosa. Python/Flask, Java/Spring, Go, Rails, Laravel: o mesmo princípio (mensagem `flash`/resposta deve refletir o que a query/SQL realmente fez).
+
+## Padrão 20 — Preservar/decidir o modelo de persistência e tornar o seed idempotente (AP-22)
+Não deixe o refactor mudar de `:memory:` para arquivo (ou vice-versa) de passagem, alterando o ciclo de vida dos dados entre execuções.
+
+**Antes (Node — banco em memória, reset a cada boot):**
+```js
+this.db = new sqlite3.Database(':memory:');
+```
+**Depois — mantendo memória:**
+```js
+const db = openDb(config.dbPath === ':memory:' ? ':memory:' : /* arquivo */);
+```
+> Se mudar para arquivo/real for inevitável, o **seed deve ser idempotente** — só popular se o banco está vazio — e NUNCA re-inserir dados em cada boot, nem sobrepor dados existentes:
+
+```python
+def seed(db):
+    if db.session.query(User).first():   # já há dados? não semeia de novo
+        return
+    db.session.add(...)
+```
+> **Genérico (qualquer stack):** Python/Flask→arquivo, Java (H2 `;DB_CLOSE_DELAY=-1` vs arquivo), Go `:memory:` vs arquivo, etc. Ao validar a paridade, use os dados pré-existentes do banco antigo (não apague); o resultado de leituras (ex.: relatórios/listagens) depende do ciclo de vida do armazenamento.
+
+## Padrão 21 — Verificar escritas/efeitos no STORE, não só o status HTTP (AP-21b)
+`204/200` não prova que o create/update/delete está correto. Leve a app ao estado esperado e consulte o store para confirmar as linhas:
+
+- **Depois de um DELETE:** conte/confirme que as linhas esperadas sumiram (e apenas as esperadas).
+- **Depois de um INSERT:** confirme a linha gravada (valores/estado) — não só o `id` da resposta.
+- **Depois de um UPDATE/status:** consulte o registro e confira o novo valor e o que foi alterado nas linhas vizinhas.
+
+```
+Ex.: DELETE /api/users/:id   →   SELECT count(*) FROM enrollments WHERE user_id=:id  → esperado 0 (ou mantido, conforme Padrão 19)
+```
+
+> Em Python: `test_client()` + consulta via connection da app; Node: roda teste + query no `db`; Java/Spring `MockMvc` + `repository.countBy...()`; Go `httptest` + transação; etc. O princípio é stack-agnóstico.
+
 ---
 
 ## Checklist de transformação (aplicar ao final)
@@ -382,3 +442,6 @@ Rotas como `/admin/reset-db`, `/admin/query`, `/delete-X` removem/escrevem globa
 - [ ] **Seed com senha JÁ hashada; login testado contra o banco legado existente**
 - [ ] Middlewares globais originais (ex: `CORS`) mantidos
 - [ ] App inicia sem erros e cada endpoint responde com o comportamento original (validação executada)
+- [ ] **Efeitos colaterais de create/update/delete verificados no STORE (linhas escritas/removidas), não só pelo status HTTP (Padrão 21)**
+- [ ] **Modelo de persistência preservado (memória vs. arquivo) ou seed idempotente se trocou (Padrão 20)**
+- [ ] **Mensagens de resposta coerentes com o comportamento real (código nunca contradiz o texto retornado) (Padrão 19)**

@@ -48,6 +48,19 @@ Total: <N> findings
 4. Cada `Recommendation` precisa ser acionável e vinculada a um padrão do playbook quando aplicável.
 5. Seu relatório deve refletir os **anti-patterns reais** encontrados; se uma categoria tem zero, escreva `0`.
 
+## Salvar em arquivo (obrigatório)
+
+O relatório da Fase 2 **sempre deve ser gravado em disco** em `../reports/audit-project-N.md` — nunca apenas exibido no terminal. `N` é o número do projeto no repositório:
+
+- `code-smells-project` (projeto 1) → `../reports/audit-project-1.md`
+- `ecommerce-api-legacy` (projeto 2) → `../reports/audit-project-2.md`
+- `task-manager-api` (projeto 3) → `../reports/audit-project-3.md`
+
+Regras:
+1. Se a pasta `reports/` não existir na raiz do repositório, crie-a.
+2. Identifique o número do projeto pelo diretório em execução (1, 2 ou 3) e use `audit-project-N.md` no nome do arquivo.
+3. Grave o arquivo com o MESMO conteúdo exibido ao usuário (formato do template abaixo).
+
 ## Exemplo completo
 
 ```
@@ -83,10 +96,11 @@ Total: 9 findings
 ```
 
 ## Pré-condição — Confirmação
-Após gerar e exibir o relatório, **PARE** e pergunte:
+Após gerar, **salvar em `../reports/audit-project-N.md`** e exibir o relatório, **PARE** e pergunte:
 
 ```
 Total: <N> findings
+Relatório salvo em ../reports/audit-project-N.md
 Fase 2 concluída. Prosseguir com a refatoração (Fase 3)? [y/n]
 ```
 

@@ -224,6 +224,16 @@ res.json({ ...user, password: user.passHash }); // ⚠ hash/token vazado
 **Impacto:** exposição de credenciais mesmo com hash; vazamento para listas, buscas, logins e logs.
 **Recomendação (agnóstica — vale p/ TODA stack):** a resposta deve usar **DTO/whitelist** com apenas os campos públicos; nunca devolver a entidade inteira sem um ponto de mapeamento. Como resolver em cada stack: Python → funções de "dict público"; Node/Express → `const { senha, token, ...} = user; res.json(...)` ou `pick`/`omit`; Java → `UsuarioDTO`/`@JsonIgnore` nos campos sensíveis; Go → tag `json:"-"` ou `ToDTO()`; Rails → `as_json(only: [...])`/views; Laravel → `makeHidden`/Resource. Os **logs** também não podem registrar hash/senha. Fonte de transformação: **Padrão 17** do playbook.
 
+## AP-21 — Comportamento de Efeito Colateral Alterado (Behavioral Drift) (HIGH)
+**Sinal (Fase 3 / validação):** na refatoração, um endpoint mutador (create/update/delete) passa a ter efeito colateral DIFFERENTE do original no store **sem** que isso seja o contrato desejado — e, frequentemente, com a mensagem de resposta ainda descrevendo o comportamento antigo. Ex.: um `DELETE` que originalmente deixava registros órfãos passou a remover filhos em cascata, enquanto a resposta continua dizendo "os registros relacionados permanecem no banco". O código faz X e a mensagem/fastro de resposta diz Y.
+**Impacto:** consumidores que dependem do efeito colateral ou do texto se comportam de forma inesperada; regressão silenciosa parecida com over-engineering disfarçado de melhoria.
+**Recomendação (agnóstica, qualquer stack):** manter o efeito colateral exatamente como no original. Se a mudança for realmente necessária (ex.: limpeza em cascata), atualize a mensagem de resposta para descrever o novo comportamento. Comportamento e texto nunca podem se contradizer. Detectar comparando o que a query/rota legada fazia com o que a nova faz (ler o código antigo, não só o novo). Ver Padrão 19.
+
+## AP-22 — Modelo de Persistência Alterado / Seed Não Idempotente (MEDIUM)
+**Sinal:** o refactor trocou a fonte de dados de forma silenciosa (ex.: banco em memória `:memory:` → arquivo em disco, ou vice-versa), mudando o ciclo de vida dos dados — dados agora persistem entre execuções (leitura de relatórios/listagens muda), OU o seed re-insere/deduplica dados em cada boot porque pressupõe banco vazio.
+**Impacto:** estado imprevisível, seed que sobrescreve/corrompe dados pré-existentes, respostas (relatórios, listagens) que variam conforme execuções anteriores.
+**Recomendação (agnóstico):** preservar a fonte de dados original. Se for trocar, torne o **seed idempotente** (semear somente se vazio) e valide a paridade CONTRA os dados pré-existentes (não apague o banco antigo na validação). Ver Padrão 20.
+
 ---
 
 ## Checklist mínimo de cobertura
