@@ -53,6 +53,11 @@ src/                                    # (ou o dir de entrada do projeto)
 9. **Preservar middlewares globais originais** (ex: `CORS(app)` com `flask-cors`) para não quebrar consumidores cross-origin.
 10. **Seed com senha hashada + migração:** ao introduzir hash de senha, o seed da app refatorada deve inserir senhas JÁ hashadas, e deve migrar/re-seed usuários que estejam em texto puro. Nunca comparar hash de entrada contra texto puro armazenado (quebra o login de usuários existentes).
 11. **Nunca serializar campos sensíveis (DTO whitelist):** toda resposta (listar, buscar, detalhar, login) usa um mapeador/whitelist de **campos públicos**. Senha/hash (`senha`/`password`), `token`, `cvv`, `numero_cartao` não aparecem em retorno nem em logs. Cada entidade tem **um único serializer** reutilizado (DRY / anti-AP-20, anti-AP-12).
+12. **Config carrega `.env`/dotenv no TOPO, antes de ler env vars:** nunca dependa de o framework carregar o `.env` depois (ex.: dentro de `app.run()`/boot) — senão o config importado antes lê valores vazios e o `.env` é ignorado em silêncio (AP-23 / Padrão 22).
+13. **Ao migrar API deprecated, remover também a config/flag obsoleta correlata** (ex.: `SQLALCHEMY_TRACK_MODIFICATIONS`) — não só a chamada (AP-25 / Padrão 23).
+14. **Sem token de autenticação falso:** login não pode devolver um "token" que nenhuma rota valida. Implementar guard real OU desativar/proteger rotas destrutivas (403) e documentar a decisão (AP-24 / Padrões 11 e 18).
+15. **Eliminar N+1 em TODOS os pontos de leitura:** listagem, detalhe por id, contagens de registros relacionados (ex.: listar entidades com `count` de filhos), relatórios e stats — nenhum `SELECT`/`Query` dentro de `for` (AP-27 / Padrão 25).
+16. **Remover código morto deixado pela refatoração:** imports, helpers, constantes e funções sem chamador (grep + linter de unused) (AP-26 / Padrão 24).
 
 > O entry point é o único responsável por montar todas as rotas; se uma rota do contrato não aparece no mapeamento, a refatoração está incompleta.
 
@@ -140,3 +145,8 @@ Independente da stack, o código refatorado deve respeitar SOLID, DRY e KISS:
 - app inicia sem erros e TODOS os endpoints do contrato da Fase 1 respondem com o mesmo método e status
 - validações, mensagens e códigos de status originais preservados
 - senha hashada em seed e compatível com login (migração aplicada)
+- `.env`/dotenv carregado no topo do config (nenhuma env var lida antes)
+- config/flag deprecated removida após migração de API obsoleta
+- rotas destrutivas protegidas/desativadas ou decisão de auth documentada (sem token falso)
+- N+1 eliminado em todos os pontos de leitura (detalhe, contagens, relatórios, stats)
+- código morto/imports sem chamador removidos

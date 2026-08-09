@@ -429,6 +429,107 @@ Ex.: DELETE /api/users/:id   →   SELECT count(*) FROM enrollments WHERE user_i
 
 > Em Python: `test_client()` + consulta via connection da app; Node: roda teste + query no `db`; Java/Spring `MockMvc` + `repository.countBy...()`; Go `httptest` + transação; etc. O princípio é stack-agnóstico.
 
+## Padrão 22 — Carregar `.env` ANTES de ler variáveis no config (AP-23)
+O config lê env vars no import; se o `.env` só é carregado depois (dentro do boot do framework), o config fica com valores vazios e o `.env` é ignorado em silêncio.
+
+**Antes (Python — dependia de o `app.run()` carregar depois):**
+```python
+# config.py
+import os
+SECRET_KEY = os.environ.get("SECRET_KEY", "")  # lido ANTES do load_dotenv()
+```
+**Depois (Python):**
+```python
+# config.py — carrega o .env no TOPO, antes de ler qualquer env var
+from dotenv import load_dotenv
+load_dotenv()
+import os
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+```
+**Antes (Node — dependia de o entry point chamar dotenv depois):**
+```js
+// config.js
+module.exports = { secret: process.env.SECRET_KEY };
+```
+**Depois (Node):**
+```js
+// config.js — primeiro o loader, depois as leituras
+require('dotenv').config();
+module.exports = { secret: process.env.SECRET_KEY };
+```
+> **Agnóstico:** em qualquer stack, chame o loader de `.env`/dotenv (Flask `load_dotenv()`, Node `dotenv.config()`, Spring `@PropertySource`/`spring.config.import`, Go `godotenv.Load()`, Rails `dotenv-rails`, Laravel `Dotenv::load()`) explicitamente no início do módulo de config, antes de qualquer `os.environ`/`process.env`. Nunca confiar em o framework carregar depois — valide lendo o config com o `.env` presente.
+
+## Padrão 23 — Remover Flags/Config Deprecated ao Migrar APIs (AP-25)
+Ao migrar uma API obsoleta (Padrão 15), remova também a opção de config correspondente.
+
+**Antes (Python):**
+```python
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True  # ignorada/obsoleta no Flask-SQLAlchemy 3.x
+```
+**Depois (Python):**
+```python
+# removida — a opção é ignorada pela lib moderna
+```
+**Antes (Node):**
+```js
+db.serialize(() => { ... }); // ou opções de lib que o wrapper moderno ignora
+```
+**Depois (Node):** remover a opção ignorada; confiar no comportamento padrão da lib atual.
+> **Agnóstico:** ao detectar uma API deprecated (AP-18), verifique se existe **config correlata** (flag/opção de inicialização) e remova-a junto — um grep pelo nome da opção no config completa a migração. Ver AP-25.
+
+## Padrão 24 — Remover Código Morto / Imports / Helpers Órfãos (AP-26)
+No final da Fase 3, varrer o que não tem mais chamador.
+
+**Antes (Python):**
+```python
+import json, os, sys, time      # nenhum usado após extrair services
+def validar_email(email):       # nenhuma rota chama mais
+    return bool(re.match(EMAIL_REGEX, email))
+```
+**Depois (Python):**
+```python
+# imports e funções sem chamador removidos
+```
+**Antes (Node):**
+```js
+const moment = require('moment');   // não usado em nenhum caminho após o refactor
+function formatDate(d){ return moment(d).format('YYYY-MM-DD'); } // órfã
+```
+**Depois (Node):** remover a importação e a função sem chamadores.
+**Verificação agnóstica:** `rg "validar_email"` / `rg "formatDate"` — buscar cada função/import; zero resultados = morto, remova. Ou linter: `ruff check .`, `flake8 .`, `eslint --no-unused-vars`, `tsc --noUnusedLocals`, `golangci-lint` (equivalente por stack).
+> **Atenção (regressão comum):** remova SÓ o que é órfão de verdade — se o helper ainda é chamado por um caminho real do contrato, mantê-lo é obrigatório (KISS/contrato). Grep antes de deletar.
+
+## Padrão 25 — Eliminar N+1 em TODOS os Pontos de Leitura (AP-27)
+Não basta otimizar a listagem principal — detalhe, contagens e relatórios também têm N+1.
+
+**Antes (ex.: detalhe/relatório com query por item):**
+```js
+// detalhe do recurso: 1 query para os filhos
+const record = await db.query("SELECT * FROM parent WHERE id = ?", [id]);
+record.children = await db.query("SELECT * FROM child WHERE parent_id = ?", [id]);
+
+// listagem com contagem por item: N+1
+const rows = await db.query("SELECT * FROM parent");
+for (const r of rows) {
+  r.count = await db.query("SELECT COUNT(*) FROM child WHERE parent_id = ?", [r.id]);
+}
+
+// relatório: agregação por entidade dentro de loop
+for (const u of users) {
+  userStats.push(await db.query("SELECT COUNT(*) FROM task WHERE user_id = ?", [u.id]));
+}
+```
+**Depois (ex.: uma única query com JOIN/GROUP BY):**
+```js
+// filhos carregados junto (JOIN) em 1 acesso
+const childrenByParent = await db.query(`
+  SELECT p.*, c.* FROM parent p LEFT JOIN child c ON c.parent_id = p.id`);
+// contagem agregada (GROUP BY) em 1 query, sem loop
+const counts = await db.query(`
+  SELECT parent_id, COUNT(*) AS cnt FROM child GROUP BY parent_id`);
+```
+**Agnóstico:** para cada endpoint de leitura (listar, detalhar, contar, relatório, stats), confirme que **nenhum** `SELECT`/`Query` roda dentro de `for`/`forEach` — Rails `includes`, Laravel `with`, JPA `@EntityGraph`, Go/SQL puro `LEFT JOIN`/`GROUP BY`, SQLAlchemy `joinedload`/`group_by`. Grep por chamadas de query dentro de loop.
+
 ---
 
 ## Checklist de transformação (aplicar ao final)
@@ -445,3 +546,7 @@ Ex.: DELETE /api/users/:id   →   SELECT count(*) FROM enrollments WHERE user_i
 - [ ] **Efeitos colaterais de create/update/delete verificados no STORE (linhas escritas/removidas), não só pelo status HTTP (Padrão 21)**
 - [ ] **Modelo de persistência preservado (memória vs. arquivo) ou seed idempotente se trocou (Padrão 20)**
 - [ ] **Mensagens de resposta coerentes com o comportamento real (código nunca contradiz o texto retornado) (Padrão 19)**
+- [ ] **`.env`/dotenv carregado no topo do config, antes de ler env vars (Padrão 22)**
+- [ ] **Config/flag deprecated removida junto com a API migrada (Padrão 23)**
+- [ ] **Código morto/imports/helpers sem chamador removidos (Padrão 24)**
+- [ ] **N+1 eliminado em TODOS os pontos de leitura (listagem, detalhe, contagens, relatórios, stats) (Padrão 25)**

@@ -234,6 +234,50 @@ res.json({ ...user, password: user.passHash }); // ⚠ hash/token vazado
 **Impacto:** estado imprevisível, seed que sobrescreve/corrompe dados pré-existentes, respostas (relatórios, listagens) que variam conforme execuções anteriores.
 **Recomendação (agnóstico):** preservar a fonte de dados original. Se for trocar, torne o **seed idempotente** (semear somente se vazio) e valide a paridade CONTRA os dados pré-existentes (não apague o banco antigo na validação). Ver Padrão 20.
 
+## AP-23 — Config Lida no Momento Errado / `.env` Carregado Tarde (MEDIUM)
+**Sinal:** o módulo de config lê variáveis de ambiente (`os.environ.get(...)`, `process.env.X`) **no momento do import**, mas o carregamento do `.env`/dotenv do framework só acontece mais tarde (ex.: dentro de `app.run()`/CLI boot em Flask, ou no entry point em Node). Como o config é importado antes, ele lê valores **vazios/defaults** — o `.env` é **silenciosamente ignorado** e a app roda com configuração errada sem erro aparente.
+```python
+# config.py — lido na importação, ANTES de o load_dotenv() do app.run() rodar
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+```
+```js
+// config.js — lido na importação, antes de require('dotenv').config() no entry point
+module.exports = { secret: process.env.SECRET_KEY };
+```
+**Impacto:** segredos/caminho de banco/debug configurados via `.env` não são aplicados; a app roda com defaults vazios/inseguros sem sinalizar.
+**Recomendação (agnóstico):** chamar explicitamente o loader de `.env` no **topo do módulo de config** (`from dotenv import load_dotenv; load_dotenv()` no Python; `require('dotenv').config()` no Node; leitura de `.env` equivalente em qualquer stack) ANTES de ler qualquer variável — nunca depender de o framework carregar depois. Ver Padrão 22.
+
+## AP-24 — Token de Autenticação Falso / Login Sem Guard (MEDIUM)
+**Sinal:** o endpoint de login retorna um "token" que **não é válido nem validado** (string fixa ou previsível, ex.: `"token-" + id`, `"fake-token"`) e NENHUMA rota valida esse token — o login existe mas não protege nada. Sinal 2: rotas mutadoras/destrutivas (`DELETE`, `PUT`, admin) permanecem abertas sem autenticação/autorização.
+```js
+// login retorna token falso que nenhuma rota valida
+res.json({ token: "fake-token-" + user.id });   // mesmo caso em qualquer stack
+```
+**Impacto:** falsa sensação de segurança; acesso não autorizado a operações destrutivas.
+**Recomendação (agnóstico):** se a app legada não tinha auth real, NÃO inventar um token falso que minta sobre proteção — ou implementar guard real (JWT/session/middleware de auth aplicado nas rotas) ou desativar/proteger as rotas destrutivas (403 "desabilitado") e **documentar a decisão** no relatório (AP-14 / Padrões 11 e 18).
+
+## AP-25 — Config/Flags Deprecated Mantidas Após Migração (LOW)
+**Sinal:** após migrar APIs deprecated (AP-18), a configuração obsoleta correspondente continua presente (ex.: `SQLALCHEMY_TRACK_MODIFICATIONS` definida em `app.config`/`config` depois que a lib passou a ignorá-la; opções deprecated em `config.js`/`application.properties`).
+**Impacto:** código ancorado em APIs obsoletas; warnings; manutenção futura confusa.
+**Recomendação (agnóstico):** ao migrar uma API deprecated, remover **também a flag/opção de config** correspondente, não só o uso no código. Ver Padrão 23.
+
+## AP-26 — Código Morto Deixado pela Refatoração (LOW)
+**Sinal:** após extrair para services/controllers, sobram imports, helpers, constantes e funções **sem nenhum chamador** (ex.: um validador/formatador que as rotas antigas usavam e ninguém mais chama; imports de bibliotecas que nenhum caminho usa; funções de utilidades que viraram órfãs).
+**Impacto:** ruído, manutenção custosa, leitores confusos sobre o que é realmente usado.
+**Recomendação (agnóstico):** no final da Fase 3, varrer com grep/rg cada função, constante e import — remover os que não têm chamador (ou rodar linter de código não usado: `eslint --no-unused-vars`, `ruff`/`flake8`, `tsc --noUnusedLocals`, `golangci-lint`, equivalente por stack). Ver Padrão 24.
+
+## AP-27 — N+1 / Query em Loop Não Eliminado em TODOS os Pontos (HIGH)
+**Sinal:** a refatoração otimizou o caso mais visível (ex.: a listagem principal com `JOIN`/`joinedload`) mas **outros endpoints seguem com query em loop** — detalhe de um recurso que carrega os filhos, listagem que conta registros relacionados por item, relatórios com agregação por entidade dentro de `for`/`forEach` (N+1 remanescente em detalhe, contagens e relatórios).
+```js
+// detalhe/relatório: 1 query por item dentro do loop
+const items = await listAll();
+for (const item of items) {
+  const children = await db.query("SELECT * FROM child WHERE parent_id = ?", [item.id]);
+}
+```
+**Impacto:** gargalo severo de performance que permanece após o "refactor" — problema de auditoria não resolvido.
+**Recomendação (agnóstico):** varrer TODOS os pontos de leitura (listagem, detalhe, contagem, relatórios, stats) e aplicar JOIN/joinedload/agregação em lote em cada um, não só no endpoint principal. Ver Padrão 8/25.
+
 ---
 
 ## Checklist mínimo de cobertura

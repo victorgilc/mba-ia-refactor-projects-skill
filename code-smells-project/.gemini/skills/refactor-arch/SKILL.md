@@ -74,6 +74,7 @@ Passos:
    - Cada finding com `arquivo` e `linhas` exatas.
    - Incluir detecção de **APIs deprecated** quando aplicável.
    - Apontar credenciais hardcoded e SQL Injection (CRITICAL).
+   - **Atenção redobrada (pontos que costumam "escapar"):** token de autenticação falso em login (AP-24); `.env`/dotenv carregado tarde e config lendo env vars cedo demais (AP-23); config/flag deprecated mantida após migração (AP-25); código morto/imports sem chamador (AP-26); N+1 remanescente em detalhe/contagens/relatórios (AP-27).
 5. Conte o total de findings.
 6. **SALVAR o relatório em arquivo (obrigatório — não pule):** grave o relatório completo (exatamente o conteúdo montado no passo 3, com o formato do `references/report-template.md`) em `../reports/audit-project-N.md`, onde `N` é o número do projeto no repositório (projeto 1 = `code-smells-project`, projeto 2 = `ecommerce-api-legacy`, projeto 3 = `task-manager-api` — ex.: `code-smells-project` → `../reports/audit-project-1.md`, `ecommerce-api-legacy` → `../reports/audit-project-2.md`, `task-manager-api` → `../reports/audit-project-3.md`). Se a pasta `reports/` não existir na raiz do repositório, crie-a. **Este arquivo é um entregável obrigatório da auditoria e deve existir independentemente da confirmação da Fase 3.**
 
@@ -104,6 +105,11 @@ Passos:
    - **Preservar o contrato de API INTEGRALMENTE:** registrar a MESMA lista de endpoints da Fase 1 (mesma rota + método). Confira rota por rota a tabela inventariada; não declare a Fase 3 completa com endpoints faltando.
    - **Preservar validações e códigos de status:** campos obrigatórios, regras (negativos, limites, categorias) e os status retornados (400/401/404/201/200) devem continuar idênticos ao original. Validação de entrada não pode ser descartada na refatoração.
    - **Preservar middlewares globais** que o original usava (ex: `CORS(app)`), para não quebrar consumidores cross-origin.
+   - **Carregar `.env`/dotenv NO TOPO do config, antes de ler qualquer variável de ambiente.** Se o loader (ex: `load_dotenv()` no Python, `dotenv.config()` no Node) só roda depois (dentro de `app.run()`/boot do framework), o config importado antes fica com valores vazios e o `.env` é **silenciosamente ignorado** — segredos/caminho de banco/debug não são aplicados sem erro aparente (AP-23 / Padrão 22).
+   - **Remover config/flags deprecated junto com a API migrada** — não basta trocar a chamada obsoleta; a opção de config correlata (ex: `SQLALCHEMY_TRACK_MODIFICATIONS`) também deve sair (AP-25 / Padrão 23).
+   - **Não devolver token de autenticação falso** (string fixa/previsível como `"token-" + id`, `"fake-token"`) que nenhuma rota valida — ou implemente guard real aplicado às rotas, ou desative/proteja as rotas destrutivas (403 "desabilitado") e **documente a decisão no relatório** (AP-24 / Padrões 11 e 18).
+   - **Eliminar N+1 em TODOS os pontos de leitura**, não só no endpoint principal: verifique também detalhe por id, listagens com contagem de registros relacionados, relatórios e stats — nenhum `SELECT`/`Query` dentro de `for` (AP-27 / Padrão 25).
+   - **Remover código morto deixado pela refatoração:** imports, helpers, constantes e funções sem nenhum chamador (grep por nome; rodar linter de unused, ex: `ruff`/`flake8`/`eslint`) (AP-26 / Padrão 24).
    - **Aplicar os princípios SOLID, KISS e DRY** ao código refatorado (detalhes em `references/mvc-guidelines.md`): cada classe/módulo com uma única responsabilidade (S, OCP), sem depender de concretos internos (DIP), sem reimplementar criptografia/comportamento já existente (DRY), e sem over-engineering — a solução mais simples que preserva o contrato original (KISS). Refatorar para não adicionar complexidade desnecessária.
    - **NÃO alterar a semântica dos efeitos colaterais de endpoints mutadores (create/update/delete).** O *comportamento observável* (quais linhas são escritas/apagadas/atualizadas — ex.: um DELETE deixa órfãos ou remove em **cascata**) faz parte do contrato tanto quanto a rota e o status. Mantenha o efeito colateral original; se a melhoria for obrigatória (ex.: introduzir limpeza em cascata), **atualize a mensagem de resposta** para descrever o novo comportamento. Comportamento e mensagem NUNCA podem se contradizer — se o código faz X e a mensagem diz que faz Y, é regressão disfarçada de melhoria.
    - **Preservar o modelo de persistência/estado (banco em memória vs. arquivo/banco real).** Não troque a fonte de dados como efeito colateral da refatoração (ex.: `:memory:` para arquivo em disco). Isso muda o ciclo de vida dos dados (reset a cada execução vs. estado que persiste entre restarts) e altera respostas (ex.: relatórios) sem aviso. Se a troca for inevitável: torne o **seed idempotente (semear só se vazio)**, nunca assuma banco vazio no boot e valide a paridade CONTRA dados pré-existentes (não apague/apague o banco antigo na validação).
@@ -142,12 +148,17 @@ Não declare a Fase 3 como completa sem validar **paridade TOTAL** com o contrat
   - [ ] Login funciona com os dados do banco legado existente (hash compatível com o armazenado).
   - [ ] Middlewares globais originais (ex: CORS) mantidos.
   - [ ] Respostas de erro não expõem stack trace nem segredos.
-  - [ ] Efeitos colaterais de create/update/delete verificados NO STORE (linhas escritas/removidas — ex.: órfãos vs. cascade), não só pelo status HTTP.
-  - [ ] Modelo de persistência preservado (memória vs. arquivo) ou, se trocado, seed idempotente e validação feita sobre dados pré-existentes.
-  - [ ] Mensagens/tex de resposta originais preservados — ou coerentes com o comportamento novo (sem contradição entre código e texto retornado).
-  - [ ] SOLID respeitado (responsabilidade única por camada; sem god class; DIP/DI em vez de estado global).
-  - [ ] DRY respeitado (validações/queries/respostas compartilhadas, não copiadas).
-  - [ ] KISS respeitado (sem over-engineering; solução mais simples que mantém o contrato).
+   - [ ] Efeitos colaterais de create/update/delete verificados NO STORE (linhas escritas/removidas — ex.: órfãos vs. cascade), não só pelo status HTTP.
+   - [ ] Modelo de persistência preservado (memória vs. arquivo) ou, se trocado, seed idempotente e validação feita sobre dados pré-existentes.
+   - [ ] Mensagens/tex de resposta originais preservados — ou coerentes com o comportamento novo (sem contradição entre código e texto retornado).
+   - [ ] `.env`/dotenv carregado no topo do config ANTES de ler env vars — config não roda com valores vazios ignorados.
+   - [ ] Config/flag deprecated removida junto com a API migrada (ex.: `SQLALCHEMY_TRACK_MODIFICATIONS`).
+   - [ ] Nenhum token de autenticação falso retornado; decisão de auth/desativação de rotas destrutivas documentada no relatório.
+   - [ ] N+1 eliminado em TODOS os pontos de leitura (detalhe, listagens com contagem, relatórios, stats), não só na listagem principal.
+   - [ ] Código morto (imports, helpers, constantes sem chamador) removido.
+   - [ ] SOLID respeitado (responsabilidade única por camada; sem god class; DIP/DI em vez de estado global).
+   - [ ] DRY respeitado (validações/queries/respostas compartilhadas, não copiadas).
+   - [ ] KISS respeitado (sem over-engineering; solução mais simples que mantém o contrato).
 - Corrigir qualquer violação de paridade e repetir até a app iniciar sem erros e TODOS os endpoints responderem com o comportamento original.
 
 ## Contrato
