@@ -1,17 +1,17 @@
-"""Script para popular o banco com dados iniciais"""
+"""Script para popular o banco com dados iniciais (idempotente)"""
 from app import app, db
 from models.task import Task
 from models.user import User
 from models.category import Category
 from datetime import datetime, timedelta
 
+
 def seed_data():
     with app.app_context():
 
-        Task.query.delete()
-        User.query.delete()
-        Category.query.delete()
-        db.session.commit()
+        if User.query.first():
+            print("Banco já possui dados. Seed ignorado (idempotente).")
+            return
 
         u1 = User()
         u1.name = 'João Silva'
@@ -94,6 +94,7 @@ def seed_data():
         print(f"  {User.query.count()} usuários")
         print(f"  {Category.query.count()} categorias")
         print(f"  {Task.query.count()} tasks")
+
 
 if __name__ == '__main__':
     seed_data()
