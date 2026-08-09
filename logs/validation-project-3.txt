@@ -1,0 +1,445 @@
+>>> Raiz
+    GET /
+    status: 200
+    body: {
+  "message": "Task Manager API",
+  "version": "1.0"
+}
+
+>>> Health
+    GET /health
+    status: 200
+    body: {
+  "status": "ok",
+  "timestamp": "2026-08-09 16:58:38.113132"
+}
+
+>>> Listar tasks
+    GET /tasks
+    status: 200
+    body: [
+  {
+    "category_id": 1,
+    "category_name": "Backend",
+    "created_at": "2026-08-09 18:49:51.445604",
+    "description": "Adicionar autentica\u00e7\u00e3o real com JWT",
+    "due_date": "2026-08-06 18:49:51.440010",
+    "id": 1,
+    "overdue": false,
+    "priority": 1,
+    "status": "done",
+    "tags": [],
+    "title": "Renomeada",
+    "updated_at": "2026-08-09 18:49:59.217592",
+    "user_id": 1,
+    "user_name": "Jo\u00e3o da Silva"
+  },
+  {
+    "category_id": 3,
+    "category_name": "DevOps",
+    "created_at": "2026-08-09 18:49:51.445614",
+    "description": "Pipeline com GitHub Actions",
+    "due_date": null,
+    "id": 3,
+    "overdue": false,
+    "priority": 2,
+    "status": "done",
+    "tags": [
+      "devops",
+      "ci",
+      "github"
+    ],
+    "title": "Configurar CI/CD",
+    "updated_at": "2026-08-09 18:49:51.445616",
+    "user_id": 3,
+    "user_name": "Pedro Oliveira"
+  },
+  {
+    "category_id": 4,
+    "category_name": "Bug",
+    "created_at": "2026-08-09 18:49:51.445618",
+    "description": "Filtro n\u00e3o funciona com caracteres especiais",
+    "due_date": "2026-08-08 18:49:51.443072",
+    "id": 4,
+    "overdue": true,
+    "priority": 1,
+    "status": "pending",
+    "tags": [],
+    "title": "Corrigir bug no filtro de busca",
+    "updated_at": "2026-08-09 18:49:51.445620",
+    "user_id": 1,
+    "user_name": "Jo\u00e3o da Silva"
+  },
+  {
+    "category_id": 1,
+    "category_name": "Backend",
+    "created_at": "2026-08-09 18:49:51.445623",
+    "description": "Endpoints retornam todos os registros",
+    "due_date": "2026-08-19 18:49:51.443112",
+    "id": 5,
+    "overdue": false,
+    "priority": 3,
+    "status": "pending",
+    "tags": [],
+    "title": "Adicionar pagina\u00e7\u00e3o na API",
+    "updated_at": "2026-08-09 18:49:51.445624",
+    "user_id": 1,
+    "user_name": "Jo\u00e3o da Silva"
+  },
+  {
+    "category_id": 1,
+    "category_name": "Backend",
+    "created_at": "2026-08-09 18:49:51.445630",
+    "description": "Gerar documenta\u00e7\u00e3o autom\u00e1tica",
+    "due_date": null,
+    "id": 7,
+    "overdue": false,
+    "priority": 4,
+    "status": "cancelled",
+    "tags": [],
+    "title": "Documentar API com Swagger",
+    "updated_at": "2026-08-09 18:49:51.445632",
+    "user_id": 3,
+    "user_name": "Pedro Oliveira"
+  },
+  {
+    "category_id": 3,
+    "category_name": "DevOps",
+    "created_at": "2026-08-09 18:49:51.445638",
+    "description": "Prometheus + Grafana",
+    "due_date": "2026-08-29 18:49:51.443157",
+    "id": 9,
+    "overdue": false,
+    "priority": 4,
+    "status": "pending",
+    "tags": [],
+    "title": "Configurar monitoramento",
+    "updated_at": "2026-08-09 18:49:51.445640",
+    "user_id": 3,
+    "user_name": "Pedro Oliveira"
+  },
+  {
+    "category_id": 1,
+    "category_name": "Backend",
+    "created_at": "2026-08-09 18:49:51.445642",
+    "description": "Usar marshmallow ou pydantic",
+    "due_date": null,
+    "id": 10,
+    "overdue": false,
+    "priority": 3,
+    "status": "pending",
+    "tags": [
+      "improvement",
+      "validation"
+    ],
+    "title": "Melhorar valida\u00e7\u00f5es de input",
+    "updated_at": "2026-08-09 18:49:51.445644",
+    "user_id": 1,
+    "user_name": "Jo\u00e3o da Silva"
+  }
+]
+
+>>> Detalhe task 1
+    GET /tasks/1
+    status: 200
+    body: {
+  "category_id": 1,
+  "created_at": "2026-08-09 18:49:51.445604",
+  "description": "Adicionar autentica\u00e7\u00e3o real com JWT",
+  "due_date": "2026-08-06 18:49:51.440010",
+  "id": 1,
+  "overdue": false,
+  "priority": 1,
+  "status": "done",
+  "tags": [],
+  "title": "Renomeada",
+  "updated_at": "2026-08-09 18:49:59.217592",
+  "user_id": 1
+}
+
+>>> Busca com priority invalido (era 500, deve 400)
+    GET /tasks/search?priority=abc
+    status: 400
+    body: {
+  "error": "Prioridade inv\u00e1lida"
+}
+
+>>> Busca com user_id invalido (era 500, deve 400)
+    GET /tasks/search?user_id=abc
+    status: 400
+    body: {
+  "error": "Usu\u00e1rio inv\u00e1lido"
+}
+
+>>> Stats
+    GET /tasks/stats
+    status: 200
+    body: {
+  "cancelled": 1,
+  "completion_rate": 28.57,
+  "done": 2,
+  "in_progress": 0,
+  "overdue": 1,
+  "pending": 4,
+  "total": 7
+}
+
+>>> Listar users
+    GET /users
+    status: 200
+    body: [
+  {
+    "active": true,
+    "created_at": "2026-08-09 18:49:51.417272",
+    "email": "joao@email.com",
+    "id": 1,
+    "name": "Jo\u00e3o da Silva",
+    "role": "admin",
+    "task_count": 4
+  },
+  {
+    "active": true,
+    "created_at": "2026-08-09 18:49:51.417283",
+    "email": "pedro@email.com",
+    "id": 3,
+    "name": "Pedro Oliveira",
+    "role": "manager",
+    "task_count": 3
+  },
+  {
+    "active": true,
+    "created_at": "2026-08-09 18:49:59.525362",
+    "email": "ana@email.com",
+    "id": 4,
+    "name": "Ana",
+    "role": "user",
+    "task_count": 0
+  }
+]
+
+>>> Detalhe user 1 (sem password na resposta)
+    GET /users/1
+    status: 200
+    body: {
+  "active": true,
+  "created_at": "2026-08-09 18:49:51.417272",
+  "email": "joao@email.com",
+  "id": 1,
+  "name": "Jo\u00e3o da Silva",
+  "role": "admin",
+  "tasks": [
+    {
+      "category_id": 1,
+      "created_at": "2026-08-09 18:49:51.445604",
+      "description": "Adicionar autentica\u00e7\u00e3o real com JWT",
+      "due_date": "2026-08-06 18:49:51.440010",
+      "id": 1,
+      "priority": 1,
+      "status": "done",
+      "tags": [],
+      "title": "Renomeada",
+      "updated_at": "2026-08-09 18:49:59.217592",
+      "user_id": 1
+    },
+    {
+      "category_id": 4,
+      "created_at": "2026-08-09 18:49:51.445618",
+      "description": "Filtro n\u00e3o funciona com caracteres especiais",
+      "due_date": "2026-08-08 18:49:51.443072",
+      "id": 4,
+      "priority": 1,
+      "status": "pending",
+      "tags": [],
+      "title": "Corrigir bug no filtro de busca",
+      "updated_at": "2026-08-09 18:49:51.445620",
+      "user_id": 1
+    },
+    {
+      "category_id": 1,
+      "created_at": "2026-08-09 18:49:51.445623",
+      "description": "Endpoints retornam todos os registros",
+      "due_date": "2026-08-19 18:49:51.443112",
+      "id": 5,
+      "priority": 3,
+      "status": "pending",
+      "tags": [],
+      "title": "Adicionar pagina\u00e7\u00e3o na API",
+      "updated_at": "2026-08-09 18:49:51.445624",
+      "user_id": 1
+    },
+    {
+      "category_id": 1,
+      "created_at": "2026-08-09 18:49:51.445642",
+      "description": "Usar marshmallow ou pydantic",
+      "due_date": null,
+      "id": 10,
+      "priority": 3,
+      "status": "pending",
+      "tags": [
+        "improvement",
+        "validation"
+      ],
+      "title": "Melhorar valida\u00e7\u00f5es de input",
+      "updated_at": "2026-08-09 18:49:51.445644",
+      "user_id": 1
+    }
+  ]
+}
+
+>>> Criar task
+    POST /tasks
+    status: 201
+    body: {
+  "category_id": 1,
+  "created_at": "2026-08-09 19:58:54.485903",
+  "description": "",
+  "due_date": null,
+  "id": 11,
+  "priority": 3,
+  "status": "pending",
+  "tags": [],
+  "title": "Nova task de validacao",
+  "updated_at": "2026-08-09 19:58:54.485909",
+  "user_id": 1
+}
+
+>>> Login (joao@email.com / 1234) - sem token falso
+    POST /login
+    status: 200
+    body: {
+  "message": "Login realizado com sucesso",
+  "user": {
+    "active": true,
+    "created_at": "2026-08-09 18:49:51.417272",
+    "email": "joao@email.com",
+    "id": 1,
+    "name": "Jo\u00e3o da Silva",
+    "role": "admin"
+  }
+}
+
+>>> Login senha errada
+    POST /login
+    status: 401
+    body: {
+  "error": "Credenciais inv\u00e1lidas"
+}
+
+>>> Reports summary
+    GET /reports/summary
+    status: 200
+    body: {
+  "generated_at": "2026-08-09 19:59:01.144237",
+  "overdue": {
+    "count": 1,
+    "tasks": [
+      {
+        "days_overdue": 1,
+        "due_date": "2026-08-08 18:49:51.443072",
+        "id": 4,
+        "title": "Corrigir bug no filtro de busca"
+      }
+    ]
+  },
+  "overview": {
+    "total_categories": 4,
+    "total_tasks": 8,
+    "total_users": 3
+  },
+  "recent_activity": {
+    "tasks_completed_last_7_days": 2,
+    "tasks_created_last_7_days": 8
+  },
+  "tasks_by_priority": {
+    "critical": 2,
+    "high": 1,
+    "low": 2,
+    "medium": 3,
+    "minimal": 0
+  },
+  "tasks_by_status": {
+    "cancelled": 1,
+    "done": 2,
+    "in_progress": 0,
+    "pending": 5
+  },
+  "user_productivity": [
+    {
+      "completed_tasks": 1,
+      "completion_rate": 20.0,
+      "total_tasks": 5,
+      "user_id": 1,
+      "user_name": "Jo\u00e3o da Silva"
+    },
+    {
+      "completed_tasks": 1,
+      "completion_rate": 33.33,
+      "total_tasks": 3,
+      "user_id": 3,
+      "user_name": "Pedro Oliveira"
+    },
+    {
+      "completed_tasks": 0,
+      "completion_rate": 0,
+      "total_tasks": 0,
+      "user_id": 4,
+      "user_name": "Ana"
+    }
+  ]
+}
+
+>>> Categories
+    GET /categories
+    status: 200
+    body: [
+  {
+    "color": "#3498db",
+    "created_at": "2026-08-09 18:49:51.429978",
+    "description": "Tarefas de backend",
+    "id": 1,
+    "name": "Backend",
+    "task_count": 5
+  },
+  {
+    "color": "#2ecc71",
+    "created_at": "2026-08-09 18:49:51.429984",
+    "description": "Tarefas de frontend",
+    "id": 2,
+    "name": "Frontend",
+    "task_count": 0
+  },
+  {
+    "color": "#e74c3c",
+    "created_at": "2026-08-09 18:49:51.429986",
+    "description": "Tarefas de infraestrutura",
+    "id": 3,
+    "name": "DevOps",
+    "task_count": 2
+  },
+  {
+    "color": "#e67e22",
+    "created_at": "2026-08-09 18:49:51.429988",
+    "description": "Corre\u00e7\u00e3o de bugs",
+    "id": 4,
+    "name": "Bug",
+    "task_count": 1
+  }
+]
+
+>>> Rota inexistente -> 404
+    GET /rota-que-nao-existe
+    status: 404
+    body: <!doctype html>
+<html lang=en>
+<title>404 Not Found</title>
+<h1>Not Found</h1>
+<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>
+
+>>> Metodo errado em rota GET -> 405
+    POST /tasks/stats
+    status: 405
+    body: <!doctype html>
+<html lang=en>
+<title>405 Method Not Allowed</title>
+<h1>Method Not Allowed</h1>
+<p>The method is not allowed for the requested URL.</p>

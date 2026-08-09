@@ -1,0 +1,26 @@
+﻿
+>>> Checkout sucesso (cartao 4111...)
+    POST http://localhost:3000/api/checkout
+    status: 200
+    body: {"msg":"Sucesso","enrollment_id":2}
+
+>>> Checkout pagamento recusado (cartao 5111...)
+    POST http://localhost:3000/api/checkout
+    status: 400
+    body: BadRequest
+
+>>> Relatorio financeiro admin
+    GET http://localhost:3000/api/admin/financial-report
+    status: 200
+    body: [{"course":"Clean Architecture","revenue":997,"students":[{"student":"Leonan","paid":997}]},{"course":"Docker","revenue":497,"students":[{"student":"Guilherme","paid":497}]}]
+
+>>> Delete usuario (efeito colateral legado: orfaos)
+    DELETE http://localhost:3000/api/users/1
+    status: 200
+    body: Usuário deletado, mas as matrículas e pagamentos ficaram sujos no banco.
+
+>>> Rota inexistente -> 404
+    GET http://localhost:3000/api/nao-existe
+    status: 404
+    body: NotFound
+

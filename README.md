@@ -380,6 +380,320 @@ desafio-skills/
 - Comandos para executar a skill em cada projeto
 - Como validar que a refatoração funcionou
 
+---
+
+## Documentação do Desafio
+
+Esta seção documenta o processo completo: análise manual, construção da skill, resultados da execução e como reproduzir tudo. A ferramenta escolhida foi o **Gemini CLI**, então a skill está em `.gemini/skills/refactor-arch/` (o conceito e a estrutura interna são idênticos aos do Claude Code).
+
+### A) Análise Manual
+
+Análise feita por leitura direta do código dos três projetos **antes** de automatizar a auditoria (ver `ANALISE-MANUAL.md`). Cada projeto tem no mínimo 5 problemas, com pelo menos 1 CRITICAL/HIGH, 2 MEDIUM e 2 LOW, com justificativa de relevância.
+
+#### Projeto 1 — code-smells-project (Python/Flask, E-commerce)
+
+Projeto monolítico em 4 arquivos; o `models.py` concentra a lógica de 4 domínios (produtos, usuários, pedidos, relatórios).
+
+| Severidade | Problema | Localização | Por que é relevante |
+|---|---|---|---|
+| CRITICAL | SQL Injection por concatenação de strings | `models.py:28, 47-49, 110, 289-297` | Queries montadas com `f"...'{email}'..."` e `LIKE '%'+termo+'%'` permitem que um request controlado leia/modifique/apague o banco inteiro. |
+| CRITICAL | Segredos hardcoded e vazados no `/health` | `app.py:7`, `controllers.py:276-290` | `SECRET_KEY` fixa em claro; `/health` devolve `secret_key`, `db_path` e `debug: True` na resposta pública — exposição de infraestrutura e de sessões. |
+| CRITICAL | Endpoint `/admin/query` executa SQL cru sem auth | `app.py:59-78` | Qualquer chamador executa SQL arbitrário; junto com `/admin/reset-db` (`app.py:47-57`), dá tomada de controle total. |
+| CRITICAL | Senhas em texto puro | `database.py:76-79`, `models.py:109-111` | Seed grava `admin123` em claro e o login compara texto puro dentro da query; vazamento do banco expõe todas as credenciais. |
+| HIGH | God Class / God Method | `models.py:1-314`, `controllers.py` | Um único arquivo concentra SQL, regra de negócio, serialização e handlers de 4 domínios; impossível testar em isolamento. |
+| HIGH | N+1 em pedidos | `models.py:171-233` | Query por pedido e por item em loops aninhados (`cursor2`/`cursor3`); gargalo severo conforme os dados crescem. |
+| HIGH | Campo `senha` serializado na resposta | `models.py:83, 99`, `controllers.py:132, 144` | Listagens e buscas de usuários devolvem a senha (em texto puro) ao cliente. |
+| MEDIUM | Tratamento de erro genérico sem log | `controllers.py:10-12, 21-22, 60-62, 108-109, 185-186` | `try/except` repetido em cada handler devolvendo `{"erro": str(e)}` com 500; dificulta diagnóstico e vaza detalhes internos. |
+| MEDIUM | Rotas administrativas sem autorização | `app.py:47-78` | `/admin/reset-db` (apaga o banco) e `/admin/query` (SQL cru) sem qualquer checagem de permissão. |
+| MEDIUM | Duplicação de código/serialização | `models.py:12-21, 31-40, 304-313` | O mesmo dict de produto/usuário é remontado em várias funções; manutenção custosa e cópias divergentes. |
+| LOW | Magic numbers | `models.py:256-262` | Faixas de desconto `10000/5000/1000` e taxas `0.1/0.05/0.02` soltas no código de `relatorio_vendas`. |
+| LOW | Nomenclatura ruim e mistura de idiomas | `models.py:187-192, 219-224`, `controllers.py` | Cursores `cursor2`/`cursor3`, variáveis `dados`/`result` sem significado; campos `sucesso/erro` misturados com prints em inglês. |
+
+#### Projeto 2 — ecommerce-api-legacy (Node.js/Express, LMS)
+
+Checkout, rotas, regra de negócio, banco e pagamento concentrados em callbacks aninhados dentro do `AppManager.js`.
+
+| Severidade | Problema | Localização | Por que é relevante |
+|---|---|---|---|
+| CRITICAL | Credenciais hardcoded | `src/utils.js:1-7` | Credenciais de banco, chave do gateway (`pk_live_...`) e SMTP fixas no código-fonte; vazamento do repo expõe toda a infraestrutura. |
+| CRITICAL | Criptografia caseira (`badCrypto`) | `src/utils.js:17-23` | "Hash" à mão com base64 repetido/truncado — reversível e com colisões; o seed grava senha `'123'` em texto puro. |
+| HIGH | God Class / God Method | `src/AppManager.js:25-138` | `setupRoutes` concentra roteamento, validação, banco e decisão de pagamento em callbacks profundos; acoplamento total. |
+| HIGH | Lógica de banco em rota com N+1 | `src/AppManager.js:82-127` | Relatório financeiro dispara query por curso, matrícula, usuário e pagamento em loops aninhados. |
+| HIGH | Estado global mutável | `src/utils.js:9-10` | `globalCache` e `totalRevenue` exportados e mutados sem encapsulamento; dificulta teste e cria corridas. |
+| HIGH | Dados sensíveis em log | `src/AppManager.js:45` | Checkout imprime o número do cartão e a chave do gateway no console — violação de PCI DSS. |
+| HIGH | DELETE deixa órfãos | `src/AppManager.js:131-137` | Remove o usuário sem limpar matrículas/pagamentos; resposta 200 que não reflete o estado real do banco. |
+| MEDIUM | Rotas sensíveis sem autorização | `src/AppManager.js:82, 131` | `/api/admin/financial-report` e `DELETE /api/users/:id` sem auth; acesso a relatórios financeiros e deleção. |
+| MEDIUM | Erros genéricos sem log | `src/AppManager.js:41-136` | `"Erro DB"`/`"Erro Pagamento"` sem log centralizado; DELETE ignora erro por completo. |
+| MEDIUM | APIs deprecated — callback hell | `src/AppManager.js:1-138` | `sqlite3` com callbacks assíncronos gera callback-hell profundo; padrão obsoleto na stack Node. |
+| LOW | Nomenclatura criptográfica | `src/AppManager.js:29-34` | Variáveis `u`, `e`, `p`, `cid`, `cc` sem significado. |
+| LOW | Strings mágicas | `src/AppManager.js:46, 108`, `src/utils.js:19` | `"PAID"`/`"DENIED"` e o limite `10000` do loop de criptografia sem constante nomeada. |
+
+#### Projeto 3 — task-manager-api (Python/Flask, Task Manager)
+
+Já possui separação em `models/`, `routes/`, `services/`, `utils/`, mas a lógica de negócio continua presa nas rotas.
+
+| Severidade | Problema | Localização | Por que é relevante |
+|---|---|---|---|
+| CRITICAL | Hash de senha fraco (MD5) | `models/user.py:27-32` | `hashlib.md5()` para armazenar/comparar senhas — criptograficamente quebrado, brute-force/rainbow tables triviais. |
+| CRITICAL | Credenciais hardcoded | `app.py:13`, `services/notification_service.py:9-10` | `SECRET_KEY 'super-secret-key-123'` e credenciais SMTP (`taskmanager@gmail.com`/`senha123`) em claro no código. |
+| HIGH | Campo `password`/hash serializado | `models/user.py:21`, `routes/user_routes.py` | `to_dict()` devolve o hash; toda resposta de usuário e login vaza o hash (vetor de brute-force offline). |
+| HIGH | Token de autenticação falso | `routes/user_routes.py:207-211` | `/login` devolve `'fake-jwt-token-<id>'` previsível que nenhuma rota valida; rotas destrutivas permanecem abertas. |
+| HIGH | Lógica de negócio dentro das rotas | `routes/task_routes.py`, `routes/report_routes.py` | Rotas concentram validação, regra de overdue, contagens e acesso a banco em módulos de 200-300 linhas (God Controller). |
+| HIGH | N+1 em múltiplos pontos | `routes/task_routes.py:42-57`, `routes/report_routes.py:53-68, 163` | Query em loop por task/usuário/categoria; listar 10 tasks vira ~21 queries. |
+| MEDIUM | Error handling ausente → 500 em input inválido | `routes/task_routes.py:261, 264` | `GET /tasks/search?priority=abc` estoura **500** (ValueError) em vez de 400; `except:` bare em vários handlers. |
+| MEDIUM | Rotas destrutivas sem autorização | `routes/user_routes.py:134`, `routes/task_routes.py:225`, `routes/report_routes.py:211` | DELETE/PUT de recursos executam sem auth; o "login" devolve token que nada valida. |
+| MEDIUM | Validação duplicada e helpers órfãos | `routes/task_routes.py`, `utils/helpers.py:57-108` | Validações reimplementadas nas rotas apesar de `process_task_data`/`validate_email` existirem sem uso. |
+| MEDIUM | Flag deprecated | `app.py:12` | `SQLALCHEMY_TRACK_MODIFICATIONS` obsoleta desde Flask-SQLAlchemy 3.x. |
+| MEDIUM | Seed destrutivo | `seed.py:11-14` | Apaga todas as linhas e re-insere a cada execução; execução sobrescreve dados pré-existentes. |
+| LOW | Código morto / imports sem chamador | `routes/task_routes.py:7`, `services/notification_service.py`, `utils/helpers.py` | `json, os, sys, time` não usados; service de notificação e helpers inteiros sem chamadores. |
+| LOW | Nomenclatura ruim | `routes/report_routes.py:24-28`, `models/task.py:45` | `p1..p5`, `u`, `d`, `p` sem significado em trechos com lógica importante. |
+| LOW | Magic numbers / constantes duplicadas | `routes/task_routes.py:39, 110, 177` | Listas de status/roles e limites repetidos literalmente, apesar de constantes definidas em `utils/helpers.py`. |
+
+### B) Construção da Skill
+
+#### Decisões de design do SKILL.md
+
+- **3 fases sequenciais e obrigatórias** (Análise → Auditoria → Refatoração), com ordem fixa documentada no topo do prompt para o agente nunca pular fases.
+- **Fase 2 com confirmação obrigatória**: a skill **pausa e pergunta** `Fase 2 concluída. Prosseguir com a refatoração (Fase 3)? [y/n]` antes de qualquer modificação. O relatório é salvo em `../reports/audit-project-N.md` **mesmo que a Fase 3 seja negada** — ele é um entregável independente.
+- **Contrato de API na Fase 1**: o agente inventaria todas as rotas (método + URL + status esperado) e usa essa tabela como lista de verificação de paridade na Fase 3 — cada rota do contrato precisa reaparecer na app nova.
+- **Tabela "Fonte de conhecimento"**: o SKILL.md diz quando ler cada arquivo de referência (Fase 1 → `project-analysis.md`, Fase 2 → `antipattern-catalog.md` + `report-template.md`, Fase 3 → `mvc-guidelines.md` + `refactoring-playbook.md`), em vez de despejar todo o conhecimento no prompt.
+- **Regras de paridade explícitas** (adicionadas após a 2ª iteração, ver desafios): preservar efeitos colaterais de create/update/delete (DELETE com órfãos continua órfão, **ou** a mensagem é atualizada para descrever o comportamento novo — código e mensagem nunca podem se contradizer); preservar o modelo de persistência (memória vs. arquivo) ou tornar o seed idempotente; não devolver token de autenticação falso; carregar `.env` no topo do config; remover flags deprecated junto com a API migrada.
+
+#### Estrutura dos arquivos de referência
+
+| Arquivo | Conteúdo |
+|---|---|
+| `project-analysis.md` | Heurísticas para detectar linguagem, framework, DB e mapear arquitetura; lista de arquivos/pastas a ignorar (`node_modules`, `__pycache__`, `*.db`). |
+| `antipattern-catalog.md` | **27 anti-patterns (AP-01 a AP-27)** com sinais de detecção, severidade (CRITICAL→LOW) e referência cruzada com os padrões do playbook. Inclui detecção de APIs deprecated (AP-18) e padrões "escapadiços" (token falso AP-24, `.env` tarde AP-23, flag deprecated AP-25, código morto AP-26, N+1 residual AP-27). |
+| `report-template.md` | Formato padronizado do relatório: cabeçalho (project, stack, files), Summary com contagem por severidade, Findings com `[Severidade] Nome`, `File:linhas`, `Description`, `Impact`, `Recommendation`, e total ao final. |
+| `mvc-guidelines.md` | Regras do padrão MVC alvo: responsabilidades de cada camada (config, models, views/routes, controllers, middlewares/error handler, entry point), SOLID/KISS/DRY. |
+| `refactoring-playbook.md` | **25 padrões de transformação (Padrão 1 a 25)** com exemplos de código antes/depois e o anti-pattern que cada um resolve. |
+
+#### Por que os anti-patterns escolhidos
+
+O catálogo (27 itens) cobre os problemas reais encontrados na análise manual dos 3 projetos:
+
+- **CRITICAL:** credenciais hardcoded (AP-01), SQL Injection (AP-02), God Class (AP-03), senha em texto puro/criptografia caseira (AP-04), endpoint administrativo SQL cru (AP-09).
+- **HIGH:** lógica de negócio em controller (AP-05), camada de dados vazando nas rotas (AP-06), estado global mutável (AP-07), N+1 em rota (AP-08), resposta vazando segredos (AP-10), contrato quebrado (AP-19), campo sensível serializado (AP-20), drift comportamental (AP-21), N+1 residual (AP-27).
+- **MEDIUM:** erro vazio/exposição (AP-11), duplicação (AP-12), N+1 (AP-13), auth ausente (AP-14), validação inconsistente (AP-15), APIs deprecated (AP-18), seed não idempotente (AP-22), `.env` carregado tarde (AP-23), token falso (AP-24).
+- **LOW:** magic numbers (AP-16), nomenclatura (AP-17), flag deprecated (AP-25), código morto (AP-26).
+
+#### Como a skill é agnóstica de tecnologia
+
+- As regras são descritas em termos de **padrões** (ex.: "query SQL montada por concatenação de string com dado do usuário"), não de sintaxe específica. Os exemplos do playbook mostram a transformação em Python/Flask **e** em Node/Express.
+- A Fase 1 detecta stack antes de qualquer auditoria; a Fase 3 usa a estrutura MVC genérica (config / models / views-routes / controllers / middlewares), que existe em qualquer stack.
+- Validação da Fase 3 é feita por **requisições HTTP reais** (não por API específica de framework), comparando status contra o contrato da Fase 1 — funciona igual para Flask e Express.
+- O mesmo SKILL.md e as mesmas referências foram copiados nos 3 projetos sem nenhuma alteração específica de projeto.
+
+#### Desafios encontrados e como resolvi
+
+1. **1ª iteração (projeto 1):** a Fase 3 corrigiu os anti-patterns mas o relatório inicial não tinha arquivo/linha exatos em todos os findings → adicionada regra obrigatória "cada finding com `arquivo` e `linhas` exatas" e validação do template.
+2. **Regressão de login pós-refatoração:** trocar senha em texto puro por hash quebrou o login dos usuários do banco antigo → adicionada regra de **migração de dados** (re-hash do que está no banco) e seed com senhas já hashadas (Padrão 4).
+3. **Contrato de API parcial:** na 1ª execução, a Fase 3 "esqueceu" rotas auxiliares e alguns handlers devolveram status diferentes do original → adicionada a obrigação de **inventariar o contrato completo na Fase 1** e conferir rota a rota na Fase 3 (Padrão 16).
+4. **Efeito colateral do DELETE:** o projeto 2 deletava usuário deixando órfãos; uma refatoração "melhorada" que introduziu cascade mudou o comportamento observável → adicionada a regra de **paridade de efeitos colaterais**: preservar o comportamento original (DELETE continua deixando órfãos, com a mensagem descrevendo isso) ou atualizar a mensagem para refletir o novo comportamento (Padrão 19).
+5. **Token falso / auth:** o projeto 3 devolvia `fake-jwt-token-...` sem nenhum guard → decisão documentada: **remover o token falso** (o `/login` agora retorna só `message` + `user`) e manter as rotas públicas como no legado, sem introduzir guard que quebrasse o contrato (Padrão 11/18; AP-24).
+6. **Persistência em memória vs. arquivo:** o projeto 2 usa `:memory:` (perde dados a cada restart); preservar esse comportamento original era parte do contrato → mantido `:memory:` e o seed idempotente (Padrão 20).
+
+### C) Resultados
+
+#### Resumo dos relatórios de auditoria
+
+| Projeto | CRITICAL | HIGH | MEDIUM | LOW | Total | Relatório |
+|---|---|---|---|---|---|---|
+| 1 — code-smells-project | 4 | 4 | 3 | 2 | 13 | `reports/audit-project-1.md` |
+| 2 — ecommerce-api-legacy | 3 | 4 | 3 | 2 | 12 | `reports/audit-project-2.md` |
+| 3 — task-manager-api | 2 | 5 | 5 | 3 | 15 | `reports/audit-project-3.md` |
+
+Todos os projetos atingiram os critérios de aceite: Fase 1 detectou a stack corretamente (3/3), Fase 2 encontrou ≥ 5 findings com ≥ 1 CRITICAL/HIGH (3/3), e a aplicação continua funcionando após a refatoração (3/3).
+
+#### Antes × Depois da estrutura
+
+**Projeto 1 — code-smells-project**
+
+```
+ANTES (monolito, 4 arquivos)          DEPOIS (MVC)
+code-smells-project/                  code-smells-project/
+├── app.py                            ├── app.py                  (entry point / composition root)
+├── controllers.py                    ├── src/config/settings.py  (env + fallback hardcoded — ver nota do checklist)
+├── models.py                         ├── src/models/             (database, produto, usuario, pedido)
+├── database.py                       ├── src/controllers/        (produto, usuario, pedido, relatorio)
+└── requirements.txt                  ├── src/services/           (notificacao)
+                                      ├── src/views/routes.py     (roteamento fino)
+                                      ├── src/middlewares/error_handler.py (re-raise HTTPException)
+                                      ├── test_app.py             (15 testes de paridade)
+                                      └── requirements.txt
+```
+
+**Projeto 2 — ecommerce-api-legacy**
+
+```
+ANTES (3 arquivos)                    DEPOIS (MVC)
+ecommerce-api-legacy/                 ecommerce-api-legacy/
+├── src/AppManager.js                 ├── src/app.js              (entry point)
+├── src/utils.js                      ├── src/config/index.js     (process.env)
+└── src/app.js                        ├── src/models/             (user, course, enrollment, payment, report, auditLog, database)
+                                      ├── src/controllers/        (checkout, report, user)
+                                      ├── src/services/           (checkout, payment, report)
+                                      ├── src/routes/             (checkout, report, user)
+                                      ├── src/middlewares/errorHandler.js
+                                      └── src/utils/crypto.js     (scrypt)
+```
+
+**Projeto 3 — task-manager-api**
+
+```
+ANTES (camadas parciais, negócio nas rotas)   DEPOIS (MVC completo)
+task-manager-api/                             task-manager-api/
+├── app.py                                    ├── app.py              (entry point + error handler)
+├── routes/*.py (God Controller)              ├── config.py           (env + load_dotenv no topo)
+├── models/*.py                               ├── controllers/        (task, user, report, category)
+├── services/notification_service.py          ├── services/           (task, user, report, category)
+└── utils/helpers.py                          ├── routes/             (blueprints finos → controllers)
+                                              ├── models/             (task, user, category)
+                                              ├── middlewares/error_handler.py (re-raise HTTPException)
+                                              ├── seed.py             (idempotente, hashes werkzeug)
+                                              └── utils/helpers.py
+```
+
+#### Checklist de validação preenchido
+
+Aplicado o mesmo template a cada projeto, marcado fielmente contra o código real:
+
+**Projeto 1 — code-smells-project**
+
+```
+### Fase 1 — Análise
+- [x] Linguagem detectada corretamente  (Python)
+- [x] Framework detectado corretamente  (Flask 3.1.1)
+- [x] Domínio da aplicação descrito corretamente  (E-commerce API — produtos, pedidos, usuários)
+- [x] Número de arquivos analisados condiz com a realidade  (4 arquivos, ~660 LOC)
+
+### Fase 2 — Auditoria
+- [x] Relatório segue o template definido nos arquivos de referência
+- [x] Cada finding tem arquivo e linhas exatos
+- [x] Findings ordenados por severidade (CRITICAL → LOW)
+- [x] Mínimo de 5 findings identificados  (13 findings)
+- [x] Detecção de APIs deprecated incluída (se aplicável)  (N/A — nenhuma API deprecated em uso no legado)
+- [x] Skill pausa e pede confirmação antes da Fase 3
+
+### Fase 3 — Refatoração
+- [x] Estrutura de diretórios segue padrão MVC  (src/{config,models,controllers,views,services,middlewares})
+- [ ] Configuração extraída para módulo de config (sem hardcoded)  — PARCIAL: extraída para src/config/settings.py, mas settings.py:3 mantém fallback hardcoded da SECRET_KEY ("minha-chave-super-secreta-123") e settings.py:5 o default "loja.db"
+- [x] Models criados para abstrair dados
+- [x] Views/Routes separadas para visualização ou roteamento
+- [x] Controllers concentram o fluxo da aplicação
+- [x] Error handling centralizado  (src/middlewares/error_handler.py re-encaminha HTTPException → 404/405 preservados)
+- [x] Entry point claro  (app.py)
+- [x] Aplicação inicia sem erros  (python -m unittest test_app -v → 15/15 OK)
+- [x] Endpoints originais respondem corretamente  (ver logs/validation-project-1.txt)
+```
+
+**Projeto 2 — ecommerce-api-legacy**
+
+```
+### Fase 1 — Análise
+- [x] Linguagem detectada corretamente  (JavaScript/Node.js)
+- [x] Framework detectado corretamente  (Express 4.18.2)
+- [x] Domínio da aplicação descrito corretamente  (LMS — cursos, matrículas, checkout, pagamentos)
+- [x] Número de arquivos analisados condiz com a realidade  (3 arquivos, ~180 LOC)
+
+### Fase 2 — Auditoria
+- [x] Relatório segue o template definido nos arquivos de referência
+- [x] Cada finding tem arquivo e linhas exatos
+- [x] Findings ordenados por severidade (CRITICAL → LOW)
+- [x] Mínimo de 5 findings identificados  (12 findings)
+- [x] Detecção de APIs deprecated incluída (se aplicável)  (AP-18 — callback hell com sqlite3)
+- [x] Skill pausa e pede confirmação antes da Fase 3
+
+### Fase 3 — Refatoração
+- [x] Estrutura de diretórios segue padrão MVC  (src/{config,models,controllers,services,routes,middlewares,utils})
+- [x] Configuração extraída para módulo de config (sem hardcoded)  (src/config/index.js via process.env.*)
+- [x] Models criados para abstrair dados
+- [x] Views/Routes separadas para visualização ou roteamento
+- [x] Controllers concentram o fluxo da aplicação
+- [x] Error handling centralizado  (src/middlewares/errorHandler.js)
+- [x] Entry point claro  (src/app.js)
+- [x] Aplicação inicia sem erros  (boot na porta 3000 — logs/server-project-2.out)
+- [x] Endpoints originais respondem corretamente  (ver logs/validation-project-2.txt)
+```
+
+**Projeto 3 — task-manager-api**
+
+```
+### Fase 1 — Análise
+- [x] Linguagem detectada corretamente  (Python)
+- [x] Framework detectado corretamente  (Flask 3.0.0 / 3.1.1)
+- [x] Domínio da aplicação descrito corretamente  (Task Manager — tarefas, usuários, categorias, relatórios)
+- [x] Número de arquivos analisados condiz com a realidade  (15 arquivos, ~1158 LOC)
+
+### Fase 2 — Auditoria
+- [x] Relatório segue o template definido nos arquivos de referência
+- [x] Cada finding tem arquivo e linhas exatos
+- [x] Findings ordenados por severidade (CRITICAL → LOW)
+- [x] Mínimo de 5 findings identificados  (15 findings)
+- [x] Detecção de APIs deprecated incluída (se aplicável)  (AP-25 — SQLALCHEMY_TRACK_MODIFICATIONS)
+- [x] Skill pausa e pede confirmação antes da Fase 3
+
+### Fase 3 — Refatoração
+- [x] Estrutura de diretórios segue padrão MVC  (controllers/, models/, routes/, services/, middlewares/)
+- [x] Configuração extraída para módulo de config (sem hardcoded)  (config.py via env + load_dotenv no topo; SECRET_KEY sem valor fixo)
+- [x] Models criados para abstrair dados
+- [x] Views/Routes separadas para visualização ou roteamento  (blueprints finos)
+- [x] Controllers concentram o fluxo da aplicação
+- [x] Error handling centralizado  (middlewares/error_handler.py re-encaminha HTTPException → 404/405 preservados)
+- [x] Entry point claro  (app.py → create_app())
+- [x] Aplicação inicia sem erros  (boot na porta 5000)
+- [x] Endpoints originais respondem corretamente  (ver logs/validation-project-3.txt)
+```
+
+#### Logs de validação (aplicações rodando após a refatoração)
+
+- `logs/validation-project-1.txt` — suíte de paridade do projeto 1: `Ran 15 tests in 12s — OK` (15/15).
+- `logs/server-project-2.out` — boot do servidor Express: `Frankenstein LMS rodando na porta 3000...`
+- `logs/validation-project-2.txt` — requisições HTTP reais no projeto 2: checkout aprovado (card 4111 → 200), checkout recusado (card 5111 → 400), relatório financeiro (200), DELETE de usuário mantendo a mensagem legada de órfãos (200), rota inexistente (404).
+- `logs/validation-project-3.txt` — boot do Flask na porta 5000 + sequência de chamadas HTTP: raiz/health (200), listagem e detalhe de tasks (200), busca com `priority=abc` e `user_id=abc` agora retornam **400** (antes estouravam 500), stats (200), users sem password na resposta (200), criação de task (201), login sem token falso (200), login com senha errada (401), reports summary (200), categories (200), rota inexistente (404), método errado (405).
+
+#### Observações sobre o comportamento da skill em stacks diferentes
+
+- **Python/Flask (projetos 1 e 3):** mesmo com níveis de organização muito diferentes (monolito de 4 arquivos vs. camadas parciais), a skill identificou os mesmos anti-patterns de segurança e arquitetura (SQL injection, senha fraca, N+1, DTO) sem ajustes específicos.
+- **Node/Express (projeto 2):** a mesma skill detectou callback hell com API deprecated (`sqlite3`), estado global mutável e criptografia caseira — padrões que não existiam nos projetos Python — provando a agnosticidade.
+- **Preservação de contrato:** nos 3 projetos os endpoints originais continuaram respondendo com os mesmos status, e os erros de framework (404/405) foram preservados pelo error handler com re-raise de `HTTPException` — exceção feita ao caso documentado do projeto 2 (DELETE legado com órfãos) e à decisão do projeto 3 (remoção do token falso do `/login`).
+
+### D) Como Executar
+
+#### Pré-requisitos
+
+- **Gemini CLI** instalada e configurada (a skill usa a convenção `.gemini/skills/`). Se preferir Claude Code ou Codex, adapte a pasta para `.claude/skills/` ou o equivalente — o `SKILL.md` e os arquivos de referência são os mesmos.
+- Python 3.11+ com as dependências dos projetos (`requirements.txt` de cada projeto) e Node.js 22+ (usa `node:sqlite`, nativo).
+- A pasta `.gemini/skills/refactor-arch/` já está copiada dentro dos 3 projetos.
+
+#### Executar a skill em cada projeto
+
+```bash
+# Projeto 1 — code-smells-project (Python/Flask)
+cd code-smells-project
+gemini   # invocar a skill refactor-arch
+
+# Projeto 2 — ecommerce-api-legacy (Node.js/Express)
+cd ../ecommerce-api-legacy
+gemini   # invocar a skill refactor-arch
+
+# Projeto 3 — task-manager-api (Python/Flask)
+cd ../task-manager-api
+gemini   # invocar a skill refactor-arch
+```
+
+> A invocação varia conforme a ferramenta. No Claude Code: `claude "/refactor-arch"`. No Gemini CLI, a skill da pasta `.gemini/skills/` é carregada pelo nome `refactor-arch`.
+
+A skill executa as 3 fases e, ao final da Fase 2, **pausa pedindo confirmação** antes de qualquer modificação. O relatório de auditoria é salvo em `../reports/audit-project-N.md`.
+
+#### Validar que a refatoração funcionou
+
+- **Projeto 1:** `python -m unittest test_app -v` — 15 testes de paridade devem passar (OK).
+- **Projeto 2:** `npm start` (ou `node src/app.js`) e conferir o boot `Frankenstein LMS rodando na porta 3000...`; depois testar as rotas do contrato (`POST /api/checkout`, `GET /api/admin/financial-report`, `DELETE /api/users/:id`, rota inexistente → 404).
+- **Projeto 3:** `python app.py` (boot na porta 5000) e conferir os endpoints do contrato — inclusive `GET /tasks/search?priority=abc` → **400** (e não 500), `POST /tasks` → 201, `/login` sem token falso, rota inexistente → 404, método errado → 405.
+- Os resultados capturados deste desafio estão em `logs/validation-project-{1,2,3}.txt`.
+
 ### Ordem de execução sugerida
 
 **1. Analisar os projetos manualmente**

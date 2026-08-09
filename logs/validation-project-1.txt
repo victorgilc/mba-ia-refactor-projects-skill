@@ -1,0 +1,45 @@
+ENVIANDO EMAIL: Pedido 1 criado para usuario 2
+ENVIANDO SMS: Seu pedido foi recebido!
+ENVIANDO PUSH: Novo pedido recebido pelo sistema
+ENVIANDO EMAIL: Pedido 1 criado para usuario 2
+ENVIANDO SMS: Seu pedido foi recebido!
+ENVIANDO PUSH: Novo pedido recebido pelo sistema
+NOTIFICAÇÃO: Pedido 1 foi aprovado! Preparar envio.
+ENVIANDO EMAIL: Pedido 1 criado para usuario 2
+ENVIANDO SMS: Seu pedido foi recebido!
+ENVIANDO PUSH: Novo pedido recebido pelo sistema
+test_01_index (test_app.TestAppParity.test_01_index)
+GET / -> Retorna JSON de boas-vindas ... ok
+test_02_listar_produtos (test_app.TestAppParity.test_02_listar_produtos)
+GET /produtos -> Lista todos os produtos ... ok
+test_03_buscar_produto_por_id (test_app.TestAppParity.test_03_buscar_produto_por_id)
+GET /produtos/<id> -> Retorna produto existente ou 404 ... ok
+test_04_criar_produto_validacoes (test_app.TestAppParity.test_04_criar_produto_validacoes)
+POST /produtos -> Testar regras de validação de criação de produtos ... ok
+test_05_atualizar_produto (test_app.TestAppParity.test_05_atualizar_produto)
+PUT /produtos/<id> -> Atualiza produto existente com validações ... ok
+test_06_deletar_produto (test_app.TestAppParity.test_06_deletar_produto)
+DELETE /produtos/<id> -> Deleta produto ... ok
+test_07_buscar_produtos_filtros (test_app.TestAppParity.test_07_buscar_produtos_filtros)
+GET /produtos/busca -> Testa busca com query params ... ok
+test_08_listar_e_buscar_usuarios (test_app.TestAppParity.test_08_listar_e_buscar_usuarios)
+GET /usuarios -> Lista usuários, GET /usuarios/<id> -> Busca usuário ... ok
+test_09_criar_usuario_e_login (test_app.TestAppParity.test_09_criar_usuario_e_login)
+POST /usuarios -> Cria usuário, POST /login -> Realiza login seguro ... ok
+test_10_pedidos_fluxo (test_app.TestAppParity.test_10_pedidos_fluxo)
+POST /pedidos -> Cria pedido com validações e checagem de estoque ... ok
+test_11_atualizar_status_pedido (test_app.TestAppParity.test_11_atualizar_status_pedido)
+PUT /pedidos/<id>/status -> Altera o status do pedido ... ok
+test_12_relatorios (test_app.TestAppParity.test_12_relatorios)
+GET /relatorios/vendas -> Gera relatório correto ... ok
+test_13_health_check_secure (test_app.TestAppParity.test_13_health_check_secure)
+GET /health -> Retorna diagnóstico seguro sem vazamentos de AP-10 ... ok
+test_14_admin_query_secure (test_app.TestAppParity.test_14_admin_query_secure)
+POST /admin/query -> Retorna 403 Forbidden protegendo de AP-09 ... ok
+test_15_erro_rotas_padrao_flask (test_app.TestAppParity.test_15_erro_rotas_padrao_flask)
+Rotas inexistentes retornam 404 e métodos incorretos retornam 405 (Sem virar 500 no middleware) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 12.085s
+
+OK
